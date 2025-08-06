@@ -1,0 +1,185 @@
+import alpaca_trade_api as tradeapi
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import GetOptionContractsRequest
+from datetime import datetime, timedelta
+import logging
+import pytz
+import requests
+
+# Setup logging
+logging.basicConfig(filename='bp_spread_log.txt', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+print("Starting BP Bull Call Spread script... Time to snag some latinum!")
+
+# Load API keys
+def read_api_keys():
+    try:
+        with open('H:\\mnt\\alpaca_keys.txt', 'r') as f:
+            lines = f.readlines()
+            paper_key = lines[0].strip()
+            paper_secret = lines[1].strip()
+            live_key = lines[2].strip()
+            live_secret = lines[3].strip()
+        return paper_key, paper_secret, live_key, live_secret
+    except Exception as e:
+        logging.error(f"Error reading API keys: {e}")
+        print(f"Error reading API keys: {e}")
+        return None, None, None, None
+
+paper_key, paper_secret, live_key, live_secret = read_api_keys()
+if not all([paper_key, paper_secret, live_key, live_secret]):
+    print("Failed to load API keys. No latinum today!")
+    exit(1)
+
+# Alpaca setup
+alpaca_rest = tradeapi.REST(paper_key, paper_secret, base_url='https://paper-api.alpaca.markets')
+alpaca_trading = TradingClient(paper_key, paper_secret, paper=True)
+
+# Configuration
+SYMBOL = 'BP'
+STRIKE_SPREAD = 2.5  # Target spread between strikes
+cdt = pytz.timezone('America/Chicago')
+
+def get_stock_snapshot(symbol):
+    try:
+        quote = alpaca_rest.get_latest_quote(symbol)
+        ask_price = float(quote.ap)
+        logging.info(f"Snapshot for {symbol}: Ask Price = ${ask_price:.2f}")
+        print(f"Snapshot for {symbol}: Ask Price = ${ask_price:.2f}")
+        return ask_price
+    except Exception as e:
+        logging.error(f"Snapshot fetch error for {symbol}: {e}")
+        print(f"Snapshot fetch error for {symbol}: {e}")
+        return None
+
+def get_option_snapshot(contract_symbol):
+    try:
+        url = f"https://data.alpaca.markets/v1beta1/options/snapshots?symbols={contract_symbol}&feed=opra&limit=100"
+        headers = {
+            "accept": "application/json",
+            "APCA-API-KEY-ID": live_key,
+            "APCA-API-SECRET-KEY": live_secret
+        }
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        snapshot = data['snapshots'][contract_symbol] if contract_symbol in data['snapshots'] else None
+        logging.info(f"Option snapshot for {contract_symbol}: {snapshot}")
+        print(f"Option snapshot for {contract_symbol}: {snapshot}")
+        bid_price = float(snapshot['latestQuote']['bp']) if snapshot and 'latestQuote' in snapshot and 'bp' in snapshot['latestQuote'] else None
+        ask_price = float(snapshot['latestQuote']['ap']) if snapshot and 'latestQuote' in snapshot and 'ap' in snapshot['latestQuote'] else None
+        return bid_price, ask_price
+    except Exception as e:
+        logging.error(f"Option snapshot error for {contract_symbol}: {e}")
+        print(f"Option snapshot error for {contract_symbol}: {e}")
+        return None, None
+
+def get_option_chain(symbol):
+    try:
+        now = datetime.now()
+        expirations = [(now + timedelta(days=(4 - now.weekday()) % 7 + i * 7)).strftime('%Y-%m-%d') for i in range(1, 5)]
+        strike_to_contract = {}
+        for exp in expirations:
+            request = GetOptionContractsRequest(
+                underlying_symbols=[symbol],
+                expiration_date=exp,
+                status='active',
+                contract_type='call'
+            )
+            response = alpaca_trading.get_option_contracts(request)
+            contracts = response.option_contracts
+            logging.info(f"Found {len(contracts)} option contracts for {symbol} (expiration {exp})")
+            print(f"Found {len(contracts)} option contracts for {symbol} (expiration {exp})")
+            for contract in contracts:
+                logging.info(f"Contract: {contract.symbol}, Type: {contract.contract_type}")
+                print(f"Contract: {contract.symbol}, Type: {contract.contract_type}")
+                try:
+                    strike_price = float(contract.strike_price)
+                    strike_to_contract[strike_price] = contract.symbol
+                except Exception as e:
+                    logging.error(f"Error processing contract for {symbol}: {e}")
+                    continue
+            if strike_to_contract:
+                break
+        if strike_to_contract:
+            strikes = sorted(strike_to_contract.keys())
+            logging.info(f"Valid call option strikes for {symbol}: {strikes}")
+            print(f"Valid call option strikes for {symbol}: {strikes}")
+        else:
+            logging.info(f"No valid call option strikes for {symbol}")
+            print(f"No valid call option strikes for {symbol}")
+        return strike_to_contract
+    except Exception as e:
+        logging.error(f"Option chain error for {symbol}: {e}")
+        print(f"Option chain error for {symbol}: {e}")
+        return {}
+
+def find_closest_bull_spread(strike_to_contract, stock_price):
+    strikes_list = sorted(strike_to_contract.keys())
+    if not strikes_list:
+        return None, None
+    # Find the closest strike >= stock price
+    lower_strike = min((s for s in strikes_list if s >= stock_price), default=None)
+    if lower_strike is None:
+        logging.warning(f"No strike >= stock price (${stock_price:.2f}) for {SYMBOL}")
+        print(f"No strike >= stock price (${stock_price:.2f}) for {SYMBOL}")
+        return None, None
+    # Find the next higher strike for the spread
+    higher_strike = min((s for s in strikes_list if s >= lower_strike + STRIKE_SPREAD), default=None)
+    if higher_strike is None:
+        logging.warning(f"No strike >= ${lower_strike + STRIKE_SPREAD:.2f} for {SYMBOL}")
+        print(f"No strike >= ${lower_strike + STRIKE_SPREAD:.2f} for {SYMBOL}")
+        return None, None
+    long_contract = strike_to_contract[lower_strike]
+    short_contract = strike_to_contract[higher_strike]
+    if 'P' in long_contract or 'P' in short_contract:
+        logging.warning(f"Invalid contract type for {SYMBOL}: Expected calls, got puts ({long_contract}, {short_contract})")
+        print(f"Invalid contract type for {SYMBOL}: Expected calls, got puts ({long_contract}, {short_contract})")
+        return None, None
+    return long_contract, short_contract
+
+def main():
+    print(f"Fetching data for {SYMBOL} bull call spread...")
+    
+    # Get stock snapshot
+    stock_price = get_stock_snapshot(SYMBOL)
+    if stock_price is None:
+        print(f"Failed to fetch stock snapshot for {SYMBOL}. Exiting.")
+        return
+    
+    # Get option chain
+    strike_to_contract = get_option_chain(SYMBOL)
+    if not strike_to_contract:
+        print(f"No valid option contracts for {SYMBOL}. Exiting.")
+        return
+    
+    # Find closest bull call spread
+    long_contract, short_contract = find_closest_bull_spread(strike_to_contract, stock_price)
+    if not long_contract or not short_contract:
+        print(f"No suitable bull call spread found for {SYMBOL}. Exiting.")
+        return
+    
+    # Get bid/ask prices for both legs
+    long_bid, long_ask = get_option_snapshot(long_contract)
+    short_bid, short_ask = get_option_snapshot(short_contract)
+    if None in (long_bid, long_ask, short_bid, short_ask):
+        print(f"Failed to fetch option prices for {SYMBOL}. Exiting.")
+        return
+    
+    # Calculate spread cost (net debit: buy long call, sell short call)
+    spread_cost = long_ask - short_bid
+    qty = 1  # Example for 1 contract
+    total_cost = spread_cost * qty * 100
+    
+    # Print results
+    print(f"\nBull Call Spread for {SYMBOL}:")
+    print(f"Stock Price: ${stock_price:.2f}")
+    print(f"Buy Call (Long): {long_contract}")
+    print(f"  Bid: ${long_bid:.2f}, Ask: ${long_ask:.2f}")
+    print(f"Sell Call (Short): {short_contract}")
+    print(f"  Bid: ${short_bid:.2f}, Ask: ${short_ask:.2f}")
+    print(f"Spread Cost (per contract): ${spread_cost:.2f}")
+    print(f"Total Cost (for {qty} contract(s)): ${total_cost:.2f}")
+    logging.info(f"Bull Call Spread for {SYMBOL}: Stock=${stock_price:.2f}, Long={long_contract} (Bid=${long_bid:.2f}, Ask=${long_ask:.2f}), Short={short_contract} (Bid=${short_bid:.2f}, Ask=${short_ask:.2f}), Spread Cost=${spread_cost:.2f}, Total Cost=${total_cost:.2f}")
+
+if __name__ == "__main__":
+    main()
