@@ -1,0 +1,116 @@
+Windows Setup Guide for Alpaca-py Multi-Leg Options Trading
+This guide helps Windows users set up Python and the Alpaca SDK (alpaca-py 0.42) to run the Alpaca-py 0.42 Multi-Leg Options Spreads Example for exploring multi-leg (MLEG) options opportunities, like bull call spreads.
+Prerequisites
+
+Windows 10 or 11: Ensure your system is up to date.
+Alpaca Account: Sign up for a paper trading account at Alpaca Markets and enable options trading (Level 3).
+Basic Command Line Knowledge: Familiarity with Command Prompt or PowerShell.
+
+Step-by-Step Setup
+1. Install Python
+
+Download Python 3.8 or higher from python.org. Choose the latest stable version (e.g., 3.12).
+Run the installer:
+Check "Add Python to PATH" during installation.
+Select "Customize installation" and ensure pip is included.
+
+
+Verify installation:
+Open Command Prompt (cmd) or PowerShell.
+Run python --version. You should see something like Python 3.12.0.
+Run pip --version to confirm pip is installed.
+
+
+
+2. Set Up a Virtual Environment
+
+Create a virtual environment to keep dependencies isolated:python -m venv alpaca_env
+
+
+Activate the virtual environment:alpaca_env\Scripts\activate
+
+Your prompt should show (alpaca_env).
+
+3. Install Required Packages
+
+With the virtual environment activated, install alpaca-py, requests, and pandas:pip install alpaca-py==0.42.0 requests pandas
+
+
+Verify installation:pip list
+
+Look for alpaca-py (0.42.0), requests, and pandas.
+
+4. Set Up Alpaca API Keys
+
+Log in to your Alpaca account and get your paper trading API keys from Alpaca Dashboard.
+Create a file named alpaca_keys.txt in your project folder with this format (replace with your keys):YOUR_PAPER_API_KEY YOUR_PAPER_SECRET_KEY
+
+Example:APK1234567890 SECRET1234567890
+
+
+Important: Keep this file secure and never share it publicly.
+
+5. Clone and Run the Example
+
+Install Git for Windows from git-scm.com if you don’t have it.
+Clone the repo:git clone https://github.com/Nawte/Alpaca-Example-mleg-alpaca-py-.42-Options-spreads-example.git
+cd Alpaca-Example-mleg-alpaca-py-.42-Options-spreads-example
+
+
+Ensure alpaca_keys.txt is in the repo folder.
+Run the script:python bp_bull_call_spread.py
+
+
+Expected output (example):Bull Call Spread for BP:
+Stock Price: $33.88
+Buy Call (Long): BP250815C00035000 Bid: $1.50, Ask: $1.60
+Sell Call (Short): BP250815C00037500 Bid: $0.50, Ask: $0.60
+Spread Cost (per contract): $1.10
+Total Cost (for 1 contract(s)): $110.00
+
+
+
+6. Explore MLEG Opportunities
+
+Customize the Script:
+Change the stock ticker: Edit SYMBOL = 'BP' to another ticker (e.g., TSLA, NFLX).
+Adjust spread width: Modify STRIKE_SPREAD = 2.5 for tighter/wider spreads.
+Try bear spreads: Update find_closest_bull_spread to prioritize higher strike for short, lower for long.
+Use puts: Change contract_type='call' to 'put' in get_option_chain.
+
+
+Test Paper Trades:
+Uncomment the LimitOrderRequest block in the script to place a paper trade (test carefully!).
+Example order:order = LimitOrderRequest(
+    symbol=SYMBOL,
+    qty=1,
+    side=OrderSide.BUY,
+    time_in_force=TimeInForce.DAY,
+    limit_price=spread_cost,
+    order_class=OrderClass.MLEG,
+    legs=[
+        OptionLegRequest(symbol=long_contract, side=OrderSide.BUY, ratio_qty=1),
+        OptionLegRequest(symbol=short_contract, side=OrderSide.SELL, ratio_qty=1)
+    ]
+)
+response = alpaca_trading.submit_order(order)
+print(f"Order submitted: {response.id}")
+
+
+
+
+
+Troubleshooting
+
+Error: Module not found: Ensure you’re in the virtual environment (alpaca_env\Scripts\activate) and packages are installed.
+API key errors: Double-check alpaca_keys.txt format and ensure keys are valid.
+No option chain data: Verify your Alpaca account has options trading enabled (Level 3).
+Script crashes: Check the stock ticker is valid and the market is open (9:30 AM–4:00 PM ET).
+
+Next Steps
+
+Experiment with different stocks or spread strategies.
+Share feedback or contribute to the repo by forking and submitting a pull request.
+Join discussions on Alpaca Forums or X with #OptionsTrading.
+
+Happy trading! 🚀
