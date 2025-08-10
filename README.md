@@ -69,3 +69,141 @@ GNU General Public License v2 (see LICENSE file).
 Inspired by discussions on alpaca.markets and Grok AI. Contributions welcome—fork and PR!
 
 Happy trading! 🚀
+
+This guide addresses common issues with alpaca-py 0.42, especially for Windows and Python 3.12 users.
+
+Issue: Missing Options Snapshots or Mleg Order Support
+
+
+
+
+
+Problem: Methods like OptionSnapshotRequest or multi-leg order submissions fail or are unavailable.
+
+
+
+Cause: Alpaca-py 0.42 may have incomplete support for Python 3.12 or Windows due to dependency conflicts (e.g., aiohttp, websockets).
+
+
+
+Solution:
+
+
+
+
+
+Downgrade Python: Use Python 3.8 (3.8.10 recommended). Install via pyenv install 3.8.10 or Anaconda.
+
+
+
+Set Up Virtualenv:
+
+python -m venv env
+source env/bin/activate  # On Windows: env\Scripts\activate
+
+
+
+Install Dependencies:
+
+pip install alpaca-py==0.42.0 requests pandas
+
+
+
+Verify SDK Methods: Run python check_alpaca_sdk.py to list available methods. Look for OptionSnapshotRequest in alpaca.data.requests.
+
+
+
+Force Reinstall: If issues persist, try:
+
+pip install --force-reinstall alpaca-py==0.42.0
+
+
+
+Check for Bugs: Visit Alpaca’s GitHub or forums.
+
+Issue: Validation Errors in OptionChainRequest
+
+
+
+
+
+Problem: OptionChainRequest fails with underlying_symbol: Field required.
+
+
+
+Solution: Use underlying_symbol instead of symbol:
+
+request = OptionChainRequest(underlying_symbol='BP', contract_type='call')
+
+Issue: No strike_price in OptionsSnapshot
+
+
+
+
+
+Problem: OptionsSnapshot objects lack strike_price attribute.
+
+
+
+Solution: Parse the strike price from the contract symbol (last 8 digits / 1000):
+
+def parse_strike(contract_symbol):
+    if len(contract_symbol) < 9 or contract_symbol[-9] not in ['C', 'P']:
+        return None
+    return int(contract_symbol[-8:]) / 1000
+
+Issue: Mleg Order Fails with "symbol is not allowed"
+
+
+
+
+
+Problem: LimitOrderRequest for mleg orders fails with {"code":40010001,"message":"symbol is not allowed for mleg order"}.
+
+
+
+Solution: Omit the symbol field in LimitOrderRequest for multi-leg orders, as the symbols are specified in the legs:
+
+order = LimitOrderRequest(
+    qty=1,
+    side=OrderSide.BUY,
+    time_in_force=TimeInForce.DAY,
+    limit_price=spread_cost/100,
+    order_class=OrderClass.MLEG,
+    legs=[
+        OptionLegRequest(symbol=long_contract, side=OrderSide.BUY, ratio_qty=1),
+        OptionLegRequest(symbol=short_contract, side=OrderSide.SELL, ratio_qty=1)
+    ]
+)
+
+Issue: Dependency Conflicts
+
+
+
+
+
+Problem: Errors like ModuleNotFoundError or SSL issues with aiohttp/websockets.
+
+
+
+Solution:
+
+
+
+
+
+Run pip list to check installed versions.
+
+
+
+Ensure compatible versions: requests>=2.25, pandas>=1.2, aiohttp<3.9.
+
+
+
+Pin versions if needed: pip install aiohttp==3.8.1 websockets==10.3.
+
+Pro Tip
+
+Always test in Alpaca’s paper trading environment before going live. Run check_alpaca_sdk.py to confirm available methods. If stuck, share the output in a GitHub issue or on Alpaca forums.
+
+Happy debugging! 🚀
